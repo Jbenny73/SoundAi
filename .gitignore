@@ -49,6 +49,10 @@ yarn-error.log*
 app/dist/
 backend/dist/
 
+# Frontend library helpers
+!app/src/lib/
+!app/src/lib/**
+
 # Tauri
 app/src-tauri/target/
 

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { startBackend, api } from './lib/backend';
+import { FormEvent, useEffect, useRef, useState } from 'react';
+import { startBackend, api, DEFAULT_PORT, configureBackendPort } from './lib/backend';
 import ControlsPanel from './components/ControlsPanel';
 import ScatterPlot from './components/ScatterPlot';
 import MLPanel from './components/MLPanel';
@@ -12,11 +12,17 @@ export default function App() {
   const [selection, setSelection] = useState<{second:number; file_name:string}[]>([]);
   const [status, setStatus] = useState('Connecting...');
   const [statusType, setStatusType] = useState<'success' | 'error' | 'info' | 'processing'>('info');
+  const portRef = useRef<number>(DEFAULT_PORT);
+  const [connectionNonce, setConnectionNonce] = useState(1);
+  const [portInput, setPortInput] = useState(String(DEFAULT_PORT));
+  const [activePort, setActivePort] = useState(DEFAULT_PORT);
 
   useEffect(() => {
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let attemptCount = 0;
+
+    configureBackendPort(portRef.current);
 
     const attemptConnection = async () => {
       if (cancelled) return;
@@ -25,16 +31,25 @@ export default function App() {
       const delayMs = Math.min(10000, 2000 * attemptCount);
 
       try {
-        setStatus(`🔄 Connecting to backend (attempt ${attemptCount})...`);
+        setStatus(`🔄 Connecting to backend on port ${portRef.current} (attempt ${attemptCount})...`);
         setStatusType('processing');
 
-        await startBackend('../backend/dist/soundai_backend');
+        const launchedPort = await startBackend();
+        if (cancelled) return;
+
+        setActivePort(launchedPort);
+        if (portRef.current !== launchedPort) {
+          portRef.current = launchedPort;
+          setPortInput(String(launchedPort));
+          configureBackendPort(launchedPort);
+        }
+
         const ok = await api('/health');
 
         if (ok?.ok) {
           if (!cancelled) {
             setReady(true);
-            setStatus('✅ Connected');
+            setStatus(`✅ Connected on port ${launchedPort}`);
             setStatusType('success');
           }
           return;
@@ -45,7 +60,7 @@ export default function App() {
         if (cancelled) return;
         console.warn(`Backend connection attempt ${attemptCount} failed. Retrying in ${delayMs / 1000}s...`, error);
         setReady(false);
-        setStatus(`⏳ Waiting for backend... retrying in ${delayMs / 1000}s (attempt ${attemptCount})`);
+        setStatus(`⏳ Waiting for backend on port ${portRef.current}... retrying in ${delayMs / 1000}s (attempt ${attemptCount})`);
         setStatusType('processing');
         retryTimer = setTimeout(attemptConnection, delayMs);
       }
@@ -57,7 +72,32 @@ export default function App() {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, []);
+  }, [connectionNonce]);
+
+  function handlePortSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const parsed = Number.parseInt(portInput, 10);
+
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+      setStatus('❌ Enter a valid port number between 1 and 65535');
+      setStatusType('error');
+      return;
+    }
+
+    if (parsed === portRef.current) {
+      setStatus(`ℹ️ Backend already targeting port ${parsed}`);
+      setStatusType('info');
+      return;
+    }
+
+    portRef.current = parsed;
+    configureBackendPort(parsed);
+    setActivePort(parsed);
+    setReady(false);
+    setStatus(`🔄 Reconnecting to backend on port ${parsed}...`);
+    setStatusType('processing');
+    setConnectionNonce((value) => value + 1);
+  }
 
   async function runPipeline(opts: {file_paths: string[]; mode: 'MFCC'|'OpenL3'|'CSV'; segment_length: number; reduce: 'PCA'|'t-SNE'|'UMAP'; cluster?: {algorithm:string; n:number}}) {
     try {
@@ -141,10 +181,39 @@ export default function App() {
                 </span>
               )}
             </div>
-            <div className="flex items-center space-x-2">
-              <div className={`w-2 h-2 ${statusColors[statusType]} rounded-full`}></div>
-              <span className="text-sm text-gray-400">{status}</span>
+            <div className="flex items-center space-x-4">
+              <form className="flex items-center space-x-2" onSubmit={handlePortSubmit}>
+                <label htmlFor="backend-port" className="text-sm text-gray-400">
+                  Port
+                </label>
+                <input
+                  id="backend-port"
+                  className="w-20 rounded bg-gray-900 border border-gray-700 px-2 py-1 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  value={portInput}
+                  onChange={(event) => setPortInput(event.target.value)}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  min={1}
+                  max={65535}
+                />
+                <button
+                  type="submit"
+                  className="rounded bg-primary-600 px-3 py-1 text-sm font-medium text-white hover:bg-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  Apply
+                </button>
+              </form>
+              <div className="flex flex-col items-end">
+                <div className="flex items-center space-x-2">
+                  <div className={`w-2 h-2 ${statusColors[statusType]} rounded-full`}></div>
+                  <span className="text-sm text-gray-400">{status}</span>
+                </div>
+                <span className="text-xs text-gray-500">Active port: {activePort}</span>
+              </div>
             </div>
+          </div>
+          <div className="mt-2 text-xs text-gray-500">
+            Use the port field to reconnect to a running backend or choose a port before launching locally.
           </div>
         </div>
       </header>
