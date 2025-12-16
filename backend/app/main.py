@@ -14,6 +14,15 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 
 _state = { 'features': None, 'reduced': None }
 
+@app.get('/')
+def root():
+    return {
+        'message': 'Sound AI backend is running',
+        'health': '/health',
+        'docs': '/docs',
+        'openapi': '/openapi.json'
+    }
+
 @app.get('/health')
 def health():
     return { 'ok': True }

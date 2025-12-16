@@ -2,7 +2,7 @@
 
 **Purpose:** This document consolidates all critical information for AI agents to quickly understand, debug, and run the Sound AI application.
 
-**Last Updated:** December 16, 2025
+**Last Updated:** July 9, 2024
 
 ---
 
@@ -39,6 +39,9 @@ python -m app.main
 {"port": 54388}
 Backend listening on port 54388
 ```
+
+You can also visit `http://127.0.0.1:54388/` in a browser to confirm the backend is alive; it returns a short JSON status block
+instead of the default "detail not found" page.
 
 **Port Configuration:**
 - Default port: `54388` (set via `SOUND_AI_PORT` env var)
