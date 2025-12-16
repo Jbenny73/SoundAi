@@ -1,16 +1,4 @@
-export const DEFAULT_PORT = 54388;
-
-let currentPort = DEFAULT_PORT;
-let BASE = `http://127.0.0.1:${DEFAULT_PORT}`;
-
-export function configureBackendPort(port: number) {
-  currentPort = port;
-  BASE = `http://127.0.0.1:${port}`;
-}
-
-export function getConfiguredPort() {
-  return currentPort;
-}
+const BASE = 'http://127.0.0.1:8000';
 
 async function ping(): Promise<boolean> {
   try {
@@ -22,14 +10,13 @@ async function ping(): Promise<boolean> {
   }
 }
 
-export async function startBackend(): Promise<number> {
+export async function startBackend(): Promise<void> {
   const healthy = await ping();
   if (!healthy) {
     throw new Error(
       `Backend not reachable at ${BASE}. Start it with \"python -m app.main\" from the backend directory.`
     );
   }
-  return currentPort;
 }
 
 export async function uploadFiles(files: File[]): Promise<{ file_paths?: string[]; error?: string }> {

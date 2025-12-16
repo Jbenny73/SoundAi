@@ -1,4 +1,4 @@
-import asyncio, socket, json
+import asyncio
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
@@ -125,31 +125,8 @@ def classify(req: ClassifyRequest):
 
 async def main():
     import uvicorn
-    import os
-    import subprocess
     
-    port = int(os.getenv('SOUND_AI_PORT', '54388'))
-
-    # Attempt to free the port before starting
-    try:
-        result = subprocess.run(
-            ['lsof', '-ti', f'TCP:{port}'],
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        pids = [pid.strip() for pid in result.stdout.splitlines() if pid.strip()]
-        for pid in pids:
-            if pid and pid.isdigit() and int(pid) != os.getpid():
-                subprocess.run(['kill', pid], check=False)
-                print(f"Killed process {pid} using port {port}", flush=True)
-    except Exception as cleanup_err:
-        print(f"Port cleanup warning: {cleanup_err}", flush=True)
-    
-    print(json.dumps({ 'port': port }), flush=True)
-    print(f"Backend listening on port {port}", flush=True)
-    
-    cfg = uvicorn.Config(app, host='127.0.0.1', port=port, log_level='warning')
+    cfg = uvicorn.Config(app, host='127.0.0.1', log_level='warning')
     server = uvicorn.Server(cfg)
     await server.serve()
 

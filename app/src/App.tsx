@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useRef, useState } from 'react';
-import { startBackend, api, DEFAULT_PORT, configureBackendPort, uploadFiles } from './lib/backend';
+import { useEffect, useState } from 'react';
+import { startBackend, api, uploadFiles } from './lib/backend';
 import ControlsPanel from './components/ControlsPanel';
 import ScatterPlot from './components/ScatterPlot';
 import MLPanel from './components/MLPanel';
@@ -13,10 +13,7 @@ export default function App() {
   const [selection, setSelection] = useState<{second:number; file_name:string}[]>([]);
   const [status, setStatus] = useState('Connecting...');
   const [statusType, setStatusType] = useState<'success' | 'error' | 'info' | 'processing'>('info');
-  const portRef = useRef<number>(DEFAULT_PORT);
   const [connectionNonce, setConnectionNonce] = useState(1);
-  const [portInput, setPortInput] = useState(String(DEFAULT_PORT));
-  const [activePort, setActivePort] = useState(DEFAULT_PORT);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,8 +27,7 @@ export default function App() {
       const delayMs = Math.min(10000, 2000 * attemptCount);
 
       try {
-        configureBackendPort(portRef.current);
-        setStatus(`🔄 Connecting to backend on port ${portRef.current} (attempt ${attemptCount})...`);
+        setStatus(`🔄 Connecting to backend (attempt ${attemptCount})...`);
         setStatusType('processing');
 
         await startBackend();
@@ -42,8 +38,7 @@ export default function App() {
         if (ok?.ok) {
           if (!cancelled) {
             setReady(true);
-            setActivePort(portRef.current);
-            setStatus(`✅ Connected on port ${portRef.current}`);
+            setStatus(`✅ Connected`);
             setStatusType('success');
           }
           return;
@@ -55,7 +50,7 @@ export default function App() {
         console.warn(`Backend connection attempt ${attemptCount} failed. Retrying in ${delayMs / 1000}s...`, error);
         setReady(false);
         setStatus(
-          `⏳ Backend unreachable on port ${portRef.current}. Start it with "python -m app.main" from backend/. Retrying in ${delayMs / 1000}s (attempt ${attemptCount})`
+          `⏳ Backend unreachable. Start it with "python -m app.main" from backend/. Retrying in ${delayMs / 1000}s (attempt ${attemptCount})`
         );
         setStatusType('error');
         retryTimer = setTimeout(attemptConnection, delayMs);
@@ -70,30 +65,6 @@ export default function App() {
     };
   }, [connectionNonce]);
 
-  function handlePortSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const parsed = Number.parseInt(portInput, 10);
-
-    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
-      setStatus('❌ Enter a valid port number between 1 and 65535');
-      setStatusType('error');
-      return;
-    }
-
-    if (parsed === portRef.current) {
-      setStatus(`ℹ️ Backend already targeting port ${parsed}`);
-      setStatusType('info');
-      return;
-    }
-
-    portRef.current = parsed;
-    configureBackendPort(parsed);
-    setActivePort(parsed);
-    setReady(false);
-    setStatus(`🔄 Reconnecting to backend on port ${parsed}...`);
-    setStatusType('processing');
-    setConnectionNonce((value) => value + 1);
-  }
 
   async function runPipeline(opts: PipelineOptions) {
     try {
@@ -183,38 +154,11 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <form className="flex items-center space-x-2" onSubmit={handlePortSubmit}>
-                <label htmlFor="backend-port" className="text-sm text-gray-400">
-                  Port
-                </label>
-                <input
-                  id="backend-port"
-                  className="w-20 rounded bg-gray-900 border border-gray-700 px-2 py-1 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  value={portInput}
-                  onChange={(event) => setPortInput(event.target.value)}
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  min={1}
-                  max={65535}
-                />
-                <button
-                  type="submit"
-                  className="rounded bg-primary-600 px-3 py-1 text-sm font-medium text-white hover:bg-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  Apply
-                </button>
-              </form>
-              <div className="flex flex-col items-end">
-                <div className="flex items-center space-x-2">
-                  <div className={`w-2 h-2 ${statusColors[statusType]} rounded-full`}></div>
-                  <span className="text-sm text-gray-400">{status}</span>
-                </div>
-                <span className="text-xs text-gray-500">Active port: {activePort}</span>
+              <div className="flex items-center space-x-2">
+                <div className={`w-2 h-2 ${statusColors[statusType]} rounded-full`}></div>
+                <span className="text-sm text-gray-400">{status}</span>
               </div>
             </div>
-          </div>
-          <div className="mt-2 text-xs text-gray-500">
-            Use the port field to reconnect to a running backend or choose a port before launching locally.
           </div>
         </div>
       </header>

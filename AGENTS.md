@@ -36,26 +36,25 @@ python -m app.main
 
 **Expected Output:**
 ```
-{"port": 54388}
-Backend listening on port 54388
+INFO:     Started server process
+INFO:     Uvicorn running on http://127.0.0.1:8000
 ```
 
-You can also visit `http://127.0.0.1:54388/` in a browser to confirm the backend is alive; it returns a short JSON status block
-instead of the default "detail not found" page.
+You can also visit `http://127.0.0.1:8000/` in a browser to confirm the backend is alive; it returns a short JSON status block.
 
-**Port Configuration:**
-- Default port: `54388` (set via `SOUND_AI_PORT` env var)
-- Backend auto-kills processes using the port before starting
-- Frontend expects backend at `http://127.0.0.1:54388` by default
+**Backend Configuration:**
+- Default port: `8000` (uvicorn default)
+- Frontend automatically connects to `http://127.0.0.1:8000`
+- No port configuration needed
 
 ### Step 3: Start Frontend
 
 **Option A: Browser Mode (Limited Features)**
 ```bash
 cd app
-npm run dev -- --port 5173
+npm run dev
 ```
-Opens at `http://localhost:5173/`
+Opens at `http://localhost:5173/` (or next available port)
 
 **Option B: Tauri Desktop App (Full Features)**
 ```bash
@@ -104,6 +103,58 @@ sound-ai-desktop/
 
 ## 🔧 RECENT CHANGES & FIXES
 
+### December 16, 2025 - Port Configuration Removal
+
+**Change:** Removed all port configuration and management from the application.
+
+**Rationale:** Simplified the application by removing user-facing port configuration UI and environment variable management. The application now uses default ports without exposing configuration options.
+
+**Changes Made:**
+
+1. **Backend (`backend/app/main.py`):**
+   - Removed `SOUND_AI_PORT` environment variable reading
+   - Removed port cleanup/killing logic
+   - Removed port logging/printing (JSON port output)
+   - Simplified to use uvicorn's default port (8000)
+   - Removed `socket` and `json` imports (no longer needed for port handling)
+
+2. **Frontend Backend Client (`app/src/lib/backend.ts`):**
+   - Removed `DEFAULT_PORT` constant
+   - Removed `configureBackendPort()` function
+   - Removed `getConfiguredPort()` function
+   - Simplified `startBackend()` to return `Promise<void>` instead of `Promise<number>`
+   - Hardcoded base URL to `http://127.0.0.1:8000` (uvicorn default)
+
+3. **App Component (`app/src/App.tsx`):**
+   - Removed port-related imports (`DEFAULT_PORT`, `configureBackendPort`)
+   - Removed port state management (`portRef`, `portInput`, `activePort`)
+   - Removed port configuration UI (input field, form, apply button)
+   - Removed port-related status messages
+   - Simplified connection status messages (no port numbers shown)
+   - Removed `FormEvent` import (no longer needed)
+
+4. **Vite Config (`app/vite.config.ts`):**
+   - Removed `strictPort` flag
+   - Kept minimal port setting (5173) needed for Tauri integration
+
+5. **Tauri Config (`app/src-tauri/tauri.conf.json`):**
+   - Updated devPath to use port 5173 (Vite default)
+
+**Current Behavior:**
+- Backend uses default port 8000 (uvicorn default)
+- Frontend connects to `http://127.0.0.1:8000` automatically
+- No port configuration UI or environment variables
+- No port-related logging or status messages
+
+**Files Changed:**
+- `backend/app/main.py` - Removed port management code
+- `app/src/lib/backend.ts` - Removed port configuration functions
+- `app/src/App.tsx` - Removed port UI and state management
+- `app/vite.config.ts` - Simplified port configuration
+- `app/src-tauri/tauri.conf.json` - Updated devPath
+
+---
+
 ### December 16, 2025 - Backend Startup Refactor
 
 **Problem:** Duplicate `startBackend()` exports causing TypeScript compilation error:
@@ -133,19 +184,17 @@ export function configureBackendPort(port: number)
 export function getConfiguredPort(): number
 ```
 
-### Backend Port Configuration
+### Backend Connection
 
 **Backend (`backend/app/main.py`):**
-- Reads port from `SOUND_AI_PORT` environment variable
-- Default: `54388`
-- Auto-kills processes on port before starting (macOS/Linux only)
-- Prints JSON `{"port": <port>}` on startup
+- Uses uvicorn default port: `8000`
+- No port configuration needed
+- Runs on `http://127.0.0.1:8000`
 
 **Frontend (`app/src/lib/backend.ts`):**
-- Default port: `54388` (constant `DEFAULT_PORT`)
-- Can be reconfigured via UI port input field
-- Calls `configureBackendPort(port)` to update `BASE` URL
-- `BASE` variable used for all API calls
+- Hardcoded base URL: `http://127.0.0.1:8000`
+- No port configuration functions
+- Automatic connection to backend
 
 ---
 
@@ -154,23 +203,23 @@ export function getConfiguredPort(): number
 ### Issue 1: "Backend not reachable" Error
 
 **Symptoms:**
-- Frontend shows: `Backend not reachable at http://127.0.0.1:54388`
+- Frontend shows: `Backend unreachable. Start it with "python -m app.main" from backend/.`
 - Console: `Backend not reachable: [error]`
 
 **Debug Steps:**
 1. Check if backend is running:
    ```bash
-   curl http://localhost:54388/health
+   curl http://127.0.0.1:8000/health
    # Should return: {"ok":true}
    ```
 
 2. Check port conflicts:
    ```bash
    # macOS/Linux
-   lsof -i :54388
+   lsof -i :8000
    
    # Windows
-   netstat -ano | findstr :54388
+   netstat -ano | findstr :8000
    ```
 
 3. Start backend manually:
@@ -181,8 +230,7 @@ export function getConfiguredPort(): number
 
 4. Verify backend output shows:
    ```
-   {"port": 54388}
-   Backend listening on port 54388
+   INFO:     Uvicorn running on http://127.0.0.1:8000
    ```
 
 **Fix:** Ensure backend is running before starting frontend.
@@ -198,8 +246,8 @@ export function getConfiguredPort(): number
 **Debug Steps:**
 1. Find process using port:
    ```bash
-   lsof -ti TCP:54388  # Backend port
-   lsof -ti TCP:5173   # Frontend port
+   lsof -ti TCP:8000  # Backend port
+   lsof -ti TCP:5173  # Frontend port
    ```
 
 2. Kill process (if safe):
@@ -207,16 +255,9 @@ export function getConfiguredPort(): number
    kill <PID>
    ```
 
-3. Or use different port:
-   ```bash
-   # Backend
-   SOUND_AI_PORT=54389 python -m app.main
-   
-   # Frontend
-   npm run dev -- --port 5174
-   ```
+3. For frontend, Vite will automatically try the next available port
 
-**Fix:** Backend auto-kills port conflicts, but may fail if process is protected.
+**Fix:** Kill the process using the port or let Vite find an available port automatically.
 
 ---
 
@@ -295,7 +336,7 @@ npm install  # Reinstall dependencies
 
 2. Check backend is running and accessible:
    ```bash
-   curl -v http://localhost:54388/health
+   curl -v http://127.0.0.1:8000/health
    ```
 
 **Fix:** CORS is already configured, but verify backend is running.
@@ -319,18 +360,14 @@ npm install  # Reinstall dependencies
 ### Frontend API Client (`app/src/lib/backend.ts`)
 
 ```typescript
-// Health check and port validation
-startBackend(): Promise<number>
+// Health check
+startBackend(): Promise<void>
 
 // Upload files
 uploadFiles(files: File[]): Promise<{file_paths?: string[]; error?: string}>
 
 // Generic API call
 api(path: string, init?: RequestInit): Promise<any>
-
-// Port configuration
-configureBackendPort(port: number): void
-getConfiguredPort(): number
 ```
 
 ---
@@ -340,13 +377,13 @@ getConfiguredPort(): number
 ### Check Backend Status
 ```bash
 # Health check
-curl http://localhost:54388/health
+curl http://127.0.0.1:8000/health
 
 # Check if process is running
 ps aux | grep "python.*app.main"
 
 # Check port binding
-lsof -i :54388
+lsof -i :8000
 ```
 
 ### Check Frontend Status
@@ -380,7 +417,7 @@ pkill -f "python.*app.main"
 pkill -f "vite"
 
 # Kill specific port
-lsof -ti TCP:54388 | xargs kill
+lsof -ti TCP:8000 | xargs kill
 ```
 
 ---
@@ -394,7 +431,7 @@ lsof -ti TCP:54388 | xargs kill
 - `backend/requirements.txt` - Python dependencies
 
 ### Frontend Files
-- `app/src/lib/backend.ts` - **CRITICAL** - Backend API client, port config
+- `app/src/lib/backend.ts` - **CRITICAL** - Backend API client
 - `app/src/App.tsx` - Main React component, connection logic
 - `app/src/components/ControlsPanel.tsx` - File upload, settings
 - `app/package.json` - Node dependencies, scripts
@@ -414,9 +451,9 @@ lsof -ti TCP:54388 | xargs kill
    - Frontend only checks if backend is reachable
 
 2. **Port Conflicts**
-   - Backend tries to auto-kill port conflicts (macOS/Linux only)
-   - May fail on Windows or protected processes
-   - Use `SOUND_AI_PORT` env var to change port
+   - Backend runs on default port 8000
+   - If port is in use, kill the process or restart system
+   - Frontend automatically finds available port if 5173 is taken
 
 3. **Browser vs Desktop Mode**
    - Browser mode: Limited file access, no audio playback
@@ -448,19 +485,19 @@ lsof -ti TCP:54388 | xargs kill
    ```bash
    cd backend
    python -m app.main
-   # Wait for: "Backend listening on port 54388"
+   # Wait for: "Uvicorn running on http://127.0.0.1:8000"
    ```
 
 4. **Verify Backend Health**
    ```bash
-   curl http://localhost:54388/health
+   curl http://127.0.0.1:8000/health
    # Should return: {"ok":true}
    ```
 
 5. **Start Frontend**
    ```bash
    cd app
-   npm run dev -- --port 5173
+   npm run dev
    ```
 
 6. **Check Browser Console**
@@ -492,11 +529,13 @@ This document consolidates information from:
 ## 🔄 VERSION HISTORY
 
 ### December 16, 2025
+- **Removed all port configuration** - simplified to use default ports (8000 for backend, 5173 for frontend)
+- Removed port UI elements and state management from frontend
+- Removed port environment variables and configuration functions
 - Removed duplicate `startBackend()` implementation
 - Simplified backend startup to health-check only
 - Backend must be started manually
 - Fixed TypeScript compilation errors
-- Updated port configuration documentation
 
 ### November 11, 2024
 - Code cleanup and organization
