@@ -102,7 +102,7 @@ npm run build        # Build production assets (served by any static host)
 ### Backend Development
 ```bash
 cd backend
-python app/main.py   # Start FastAPI server
+python -m app.main   # Start FastAPI server (must run from backend directory)
 ```
 
 ## Supported File Formats
@@ -135,10 +135,8 @@ python app/main.py   # Start FastAPI server
 
 ## Documentation
 
-- `FULL_SYSTEM_REVIEW.md` - Complete system architecture
-- `HOW_TO_USE_LABELING.md` - Label editing guide
-- `REACT_APP_REDESIGN.md` - UI design documentation
-- `CLEANUP_SUMMARY.md` - Recent cleanup changes
+- `AGENTS.md` - **AI debugging guide** - Comprehensive troubleshooting, architecture, and recent changes for AI agents
+- `HOW_TO_USE_LABELING.md` - User guide for audio labeling and classification features
 
 ## License
 
