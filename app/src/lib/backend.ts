@@ -1,10 +1,13 @@
+import { exists } from '@tauri-apps/api/fs';
 import { Command } from '@tauri-apps/api/shell';
 import { platform } from '@tauri-apps/api/os';
 import { resolveResource } from '@tauri-apps/api/path';
 
-const DEFAULT_PORT = 54388;
+export const DEFAULT_PORT = 54388;
+
 let backendBaseUrl: string | null = null;
 let startPromise: Promise<string> | null = null;
+let configuredPort = DEFAULT_PORT;
 
 function parsePort(data: string): number | null {
   const trimmed = data.trim();
@@ -35,7 +38,7 @@ function parsePort(data: string): number | null {
   return null;
 }
 
-async function spawnBinary(executableHint: string): Promise<Command | null> {
+export async function spawnBinary(executableHint: string): Promise<Command | null> {
   if (!executableHint) return null;
 
   const plat = await platform();
@@ -52,23 +55,38 @@ async function spawnBinary(executableHint: string): Promise<Command | null> {
     `backend/dist/${executableHint}${extension}`,
   ];
 
-  for (const candidate of attempts) {
+  const resolveCandidate = async (candidate: string): Promise<string | null> => {
     try {
       const absolute = await resolveResource(candidate);
-      return new Command(absolute);
-    } catch (error) {
-      try {
-        return new Command(candidate);
-      } catch {
-        continue;
+      if (await exists(absolute)) {
+        return absolute;
       }
+    } catch {
+      // ignore resolution errors and try the raw candidate
+    }
+
+    if (await exists(candidate)) {
+      return candidate;
+    }
+
+    return null;
+  };
+
+  for (const candidate of attempts) {
+    const resolved = await resolveCandidate(candidate);
+    if (!resolved) continue;
+
+    try {
+      return new Command(resolved);
+    } catch {
+      // try next candidate
     }
   }
 
   return null;
 }
 
-async function spawnPythonFallback(): Promise<Command> {
+export async function spawnPythonFallback(): Promise<Command> {
   const scriptCandidates = [
     'backend/app/main.py',
     '../backend/app/main.py',
@@ -114,6 +132,14 @@ async function spawnPythonFallback(): Promise<Command> {
     : new Error('Unable to start Python backend');
 }
 
+export async function createBackendCommand(executableHint: string): Promise<Command> {
+  const binary = await spawnBinary(executableHint);
+  if (binary) return binary;
+
+  console.warn('Backend binary missing, retrying with Python backend...');
+  return spawnPythonFallback();
+}
+
 async function ensureBackend(executableHint: string): Promise<string> {
   if (backendBaseUrl) {
     return backendBaseUrl;
@@ -124,19 +150,24 @@ async function ensureBackend(executableHint: string): Promise<string> {
   }
 
   if (typeof window === 'undefined' || !('__TAURI__' in window)) {
-    backendBaseUrl = `http://127.0.0.1:${DEFAULT_PORT}`;
+    backendBaseUrl = `http://127.0.0.1:${configuredPort}`;
     return backendBaseUrl;
   }
 
   startPromise = new Promise<string>(async (resolve, reject) => {
     try {
-      const command = (await spawnBinary(executableHint)) ?? (await spawnPythonFallback());
+      const command = await createBackendCommand(executableHint);
 
       let resolved = false;
+      let timeout: ReturnType<typeof setTimeout> | null = null;
 
       command.stdout.on('data', (event: string) => {
         const port = parsePort(event);
         if (port) {
+          if (timeout) {
+            clearTimeout(timeout);
+          }
+          configuredPort = port;
           backendBaseUrl = `http://127.0.0.1:${port}`;
           if (!resolved) {
             resolved = true;
@@ -152,14 +183,21 @@ async function ensureBackend(executableHint: string): Promise<string> {
       command.on('close', () => {
         backendBaseUrl = null;
         startPromise = null;
+        if (timeout) {
+          clearTimeout(timeout);
+        }
+        if (!resolved) {
+          resolved = true;
+          reject(new Error('Backend process exited before reporting a port'));
+        }
       });
 
       await command.spawn();
 
-      setTimeout(() => {
+      timeout = setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          backendBaseUrl = `http://127.0.0.1:${DEFAULT_PORT}`;
+          backendBaseUrl = `http://127.0.0.1:${configuredPort}`;
           resolve(backendBaseUrl);
         }
       }, 3000);
@@ -172,8 +210,42 @@ async function ensureBackend(executableHint: string): Promise<string> {
   return startPromise;
 }
 
-export async function startBackend(executableHint: string): Promise<string> {
-  return ensureBackend(executableHint);
+export function configureBackendPort(port: number) {
+  configuredPort = port;
+  backendBaseUrl = null;
+  startPromise = null;
+}
+
+export function getConfiguredPort() {
+  return configuredPort;
+}
+
+async function isHealthy(base: string) {
+  try {
+    const response = await fetch(`${base}/health`);
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function startBackend(
+  executableHint = '../backend/dist/soundai_backend',
+): Promise<number> {
+  const base = `http://127.0.0.1:${configuredPort}`;
+
+  if (await isHealthy(base)) {
+    backendBaseUrl = base;
+    return configuredPort;
+  }
+
+  const url = await ensureBackend(executableHint);
+  const port = Number.parseInt(new URL(url).port, 10);
+  if (Number.isFinite(port)) {
+    configuredPort = port;
+  }
+
+  return configuredPort;
 }
 
 export async function api(path: string, init?: RequestInit) {
@@ -181,7 +253,7 @@ export async function api(path: string, init?: RequestInit) {
     await ensureBackend('../backend/dist/soundai_backend');
   }
 
-  const base = backendBaseUrl ?? `http://127.0.0.1:${DEFAULT_PORT}`;
+  const base = backendBaseUrl ?? `http://127.0.0.1:${configuredPort}`;
   const url = `${base}${path.startsWith('/') ? path : `/${path}`}`;
 
   try {
@@ -203,109 +275,8 @@ export async function api(path: string, init?: RequestInit) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
 }
-export const DEFAULT_PORT = 54388;
-let currentPort = DEFAULT_PORT;
-let BASE = `http://127.0.0.1:${DEFAULT_PORT}`; // Default backend port for dev mode
 
-export function configureBackendPort(port: number) {
-  currentPort = port;
-  BASE = `http://127.0.0.1:${port}`;
-}
-
-export function getConfiguredPort() {
-  return currentPort;
-}
-
-export async function startBackend() {
-  // Ensure BASE aligns with the currently configured port
-  configureBackendPort(currentPort);
-
-  // First, check if backend is already running on the configured port
-  try {
-    const response = await fetch(`${BASE}/health`);
-    if (response.ok) {
-      console.log(`Backend already running on port ${currentPort}`);
-      return currentPort;
-    }
-  } catch (e) {
-    console.log(`Backend not found on port ${currentPort}, attempting to start...`);
-  }
-
-  // Check if running in Tauri
-  if (typeof window !== 'undefined' && '__TAURI__' in window) {
-    try {
-      // Dynamically import Tauri API only when needed
-      const { Command } = await import('@tauri-apps/api/shell');
-
-      async function spawnPython(commandName: string) {
-        const cmd = new Command(commandName, ['app/main.py'], {
-          cwd: '../backend',
-          env: {
-            SOUND_AI_PORT: String(currentPort),
-            PYTHONPATH: '.',
-          },
-        });
-
-        const port = await new Promise<number>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            reject(new Error('Backend startup timeout - no port received after 30 seconds'));
-          }, 30000);
-
-          cmd.stdout.on('data', (line) => {
-            try {
-              const o = JSON.parse(line);
-              if (o.port) {
-                clearTimeout(timeout);
-                configureBackendPort(o.port);
-                resolve(o.port);
-              }
-            } catch {
-              console.debug('Backend STDOUT:', line);
-            }
-          });
-
-          cmd.stderr.on('data', (line) => {
-            console.error('Backend STDERR:', line);
-          });
-
-          cmd.on('error', (error) => {
-            clearTimeout(timeout);
-            reject(error);
-          });
-
-          cmd.spawn().catch((err) => {
-            clearTimeout(timeout);
-            reject(err);
-          });
-        });
-
-        return port;
-      }
-
-      try {
-        return await spawnPython('python3');
-      } catch (primaryError) {
-        console.warn('python3 command failed, retrying with python:', primaryError);
-        return await spawnPython('python');
-      }
-    } catch (err) {
-      console.error('Failed to start backend via Tauri:', err);
-      // Fall back to assuming backend is on the default port
-      return currentPort;
-    }
-  } else {
-    // Running in dev mode, backend should already be running
-    console.log('Running in dev mode, using backend at:', BASE);
-    return currentPort;
-  }
-}
-
-export async function api<T=any>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, init);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API request failed (${res.status}): ${text}`);
-  }
-  return res.json();
-}
-
+export const __test__ = {
+  parsePort,
+  isHealthy,
+};
