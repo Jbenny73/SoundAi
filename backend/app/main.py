@@ -1,18 +1,33 @@
 import asyncio, socket, json
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from typing import List
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+import shutil
 import pandas as pd
 from app.core.schemas import FeatureRequest, ReduceRequest, ClusterRequest, SpecRequest, ClassifyRequest, DataFramePayload
 from app.core import algos
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["tauri://localhost", "http://localhost"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 _state = { 'features': None, 'reduced': None }
 
 @app.get('/health')
 def health():
     return { 'ok': True }
+
+
+@app.post('/api/upload')
+async def upload(files: List[UploadFile] = File(...)):
+    saved_paths = []
+    for file in files:
+        suffix = Path(file.filename).suffix or '.dat'
+        with NamedTemporaryFile(delete=False, suffix=suffix, prefix='soundai_') as tmp:
+            shutil.copyfileobj(file.file, tmp)
+            saved_paths.append(tmp.name)
+    return { 'file_paths': saved_paths }
 
 @app.post('/api/features')
 def features(req: FeatureRequest):
