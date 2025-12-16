@@ -1,10 +1,11 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { startBackend, api, DEFAULT_PORT, configureBackendPort } from './lib/backend';
+import { startBackend, api, DEFAULT_PORT, configureBackendPort, uploadFiles } from './lib/backend';
 import ControlsPanel from './components/ControlsPanel';
 import ScatterPlot from './components/ScatterPlot';
 import MLPanel from './components/MLPanel';
 
 export type Row = { x?: number; y?: number; second: number; file_name: string; label?: number } & Record<string, any>;
+type PipelineOptions = { files: File[]; mode: 'MFCC'|'OpenL3'|'CSV'; segment_length: number; reduce: 'PCA'|'t-SNE'|'UMAP'; cluster?: {algorithm:string; n:number} };
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -22,8 +23,6 @@ export default function App() {
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let attemptCount = 0;
 
-    configureBackendPort(portRef.current);
-
     const attemptConnection = async () => {
       if (cancelled) return;
 
@@ -31,25 +30,20 @@ export default function App() {
       const delayMs = Math.min(10000, 2000 * attemptCount);
 
       try {
+        configureBackendPort(portRef.current);
         setStatus(`🔄 Connecting to backend on port ${portRef.current} (attempt ${attemptCount})...`);
         setStatusType('processing');
 
-        const launchedPort = await startBackend();
+        await startBackend();
         if (cancelled) return;
-
-        setActivePort(launchedPort);
-        if (portRef.current !== launchedPort) {
-          portRef.current = launchedPort;
-          setPortInput(String(launchedPort));
-          configureBackendPort(launchedPort);
-        }
 
         const ok = await api('/health');
 
         if (ok?.ok) {
           if (!cancelled) {
             setReady(true);
-            setStatus(`✅ Connected on port ${launchedPort}`);
+            setActivePort(portRef.current);
+            setStatus(`✅ Connected on port ${portRef.current}`);
             setStatusType('success');
           }
           return;
@@ -60,8 +54,10 @@ export default function App() {
         if (cancelled) return;
         console.warn(`Backend connection attempt ${attemptCount} failed. Retrying in ${delayMs / 1000}s...`, error);
         setReady(false);
-        setStatus(`⏳ Waiting for backend on port ${portRef.current}... retrying in ${delayMs / 1000}s (attempt ${attemptCount})`);
-        setStatusType('processing');
+        setStatus(
+          `⏳ Backend unreachable on port ${portRef.current}. Start it with "python -m app.main" from backend/. Retrying in ${delayMs / 1000}s (attempt ${attemptCount})`
+        );
+        setStatusType('error');
         retryTimer = setTimeout(attemptConnection, delayMs);
       }
     };
@@ -99,11 +95,20 @@ export default function App() {
     setConnectionNonce((value) => value + 1);
   }
 
-  async function runPipeline(opts: {file_paths: string[]; mode: 'MFCC'|'OpenL3'|'CSV'; segment_length: number; reduce: 'PCA'|'t-SNE'|'UMAP'; cluster?: {algorithm:string; n:number}}) {
+  async function runPipeline(opts: PipelineOptions) {
     try {
+      setStatus('📤 Uploading files to backend...');
+      setStatusType('processing');
+      const uploaded = await uploadFiles(opts.files);
+      if (uploaded.error || !uploaded.file_paths) {
+        setStatus('❌ ' + (uploaded.error ?? 'Upload failed'));
+        setStatusType('error');
+        return;
+      }
+
       setStatus('🔄 Extracting features...');
       setStatusType('processing');
-      const featResult = await api('/api/features', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ file_paths: opts.file_paths, mode: opts.mode, segment_length: opts.segment_length }) });
+      const featResult = await api('/api/features', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ file_paths: uploaded.file_paths, mode: opts.mode, segment_length: opts.segment_length }) });
       if (featResult.error) {
         setStatus('❌ ' + featResult.error);
         setStatusType('error');
@@ -160,8 +165,6 @@ export default function App() {
     );
   }
 
-  const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
-
   return (
     <div className="h-screen overflow-hidden bg-gray-900 flex flex-col">
       {/* Header */}
@@ -174,12 +177,10 @@ export default function App() {
                   <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
                 </svg>
               </div>
-              <h1 className="text-xl font-semibold text-white">Sound AI</h1>
-              {!isTauri && (
-                <span className="px-2 py-1 bg-yellow-900 text-yellow-200 text-xs rounded">
-                  Browser Mode - Limited File Access
-                </span>
-              )}
+              <div>
+                <h1 className="text-xl font-semibold text-white">Sound AI Research Console</h1>
+                <p className="text-xs text-gray-400">Upload, explore, and cluster audio features for explainable ML experiments.</p>
+              </div>
             </div>
             <div className="flex items-center space-x-4">
               <form className="flex items-center space-x-2" onSubmit={handlePortSubmit}>
@@ -217,16 +218,6 @@ export default function App() {
           </div>
         </div>
       </header>
-
-      {/* Browser Mode Warning */}
-      {!isTauri && (
-        <div className="bg-yellow-900 border-b border-yellow-700 px-8 py-2">
-          <div className="max-w-7xl mx-auto text-yellow-200 text-sm">
-            ⚠️ <strong>Browser Mode:</strong> For full functionality with audio labeling, run the desktop app: <code className="bg-yellow-950 px-2 py-1 rounded">npm run tauri:dev</code>
-            {' '}or use <code className="bg-yellow-950 px-2 py-1 rounded">clean_interface.html</code>
-          </div>
-        </div>
-      )}
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">

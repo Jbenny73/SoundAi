@@ -1,8 +1,8 @@
-# Sound AI - Desktop Audio Analysis Application
+# Sound AI - Research Audio Analysis Workbench
 
-Modern **desktop-only** audio analysis application built with Tauri, React, and FastAPI.
+Modern **researcher-focused** audio analysis experience built with React and FastAPI.
 
-> **Note**: This is a desktop application. HTML interfaces have been removed. Use the Tauri desktop app only.
+> The app now runs in the browser while the FastAPI backend runs locally. No Tauri shell is required.
 
 ## Features
 
@@ -14,7 +14,6 @@ Modern **desktop-only** audio analysis application built with Tauri, React, and 
 - **Spectrogram Viewer**: Real-time spectrogram generation
 - **Audio Playback**: Play and visualize segments (desktop only)
 - **Label Editor**: Manually edit and export labels
-- **Native Desktop**: Cross-platform desktop application with Tauri
 
 ## Quick Start
 
@@ -32,18 +31,18 @@ cd app
 npm install
 ```
 
-### 3. Run Desktop Application
+### 3. Run the Web Application
 
 ```bash
 cd app
-npm run tauri dev
+npm run dev
 ```
 
 ## Project Structure
 
 ```
 sound-ai-desktop/
-├── app/                    # Frontend (React + Tauri)
+├── app/                    # Frontend (React web app)
 │   ├── src/
 │   │   ├── App.tsx
 │   │   ├── components/
@@ -53,7 +52,6 @@ sound-ai-desktop/
 │   │   │   └── MLPanel.tsx
 │   │   └── lib/
 │   │       └── backend.ts
-│   ├── src-tauri/          # Rust backend
 │   └── package.json
 └── backend/                # Python backend
     ├── app/
@@ -97,9 +95,8 @@ sound-ai-desktop/
 ### Frontend Development
 ```bash
 cd app
-npm run dev          # Run in browser (limited features)
-npm run tauri dev    # Run desktop app (full features)
-npm run tauri build  # Build production executable
+npm run dev          # Run in browser
+npm run build        # Build production assets (served by any static host)
 ```
 
 ### Backend Development
@@ -107,17 +104,6 @@ npm run tauri build  # Build production executable
 cd backend
 python app/main.py   # Start FastAPI server
 ```
-
-The backend starts automatically when running the desktop app.
-
-## Building for Production
-
-```bash
-cd app
-npm run tauri build
-```
-
-Executables will be in `app/src-tauri/target/release/`.
 
 ## Supported File Formats
 
@@ -129,7 +115,6 @@ Executables will be in `app/src-tauri/target/release/`.
 - **OS**: macOS, Windows, or Linux
 - **Python**: 3.8+
 - **Node.js**: 16+
-- **Rust**: Latest stable (for building)
 
 ## Troubleshooting
 
@@ -146,7 +131,7 @@ Executables will be in `app/src-tauri/target/release/`.
 ### Build Errors
 - Update npm dependencies: `npm install`
 - Clear cache: `rm -rf node_modules && npm install`
-- Update Rust: `rustup update`
+- Update Node.js: `nvm install --lts`
 
 ## Documentation
 
@@ -161,11 +146,8 @@ See LICENSE file for details.
 
 ## Architecture
 
-This is a **desktop-only application**:
-- React frontend with Tailwind CSS
-- Tauri for native desktop features
-- FastAPI backend (Python)
-- File system access for audio processing
-- Native audio playback capabilities
-
-**Previous HTML interfaces have been removed** - this project is focused on delivering the best desktop experience.
+This is a **web-first research application**:
+- React frontend with Tailwind CSS served by Vite
+- FastAPI backend (Python) running locally for secure audio processing
+- Temporary server-side storage for uploaded files
+- Optional native audio playback for environments that support it
