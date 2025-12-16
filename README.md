@@ -31,7 +31,15 @@ cd app
 npm install
 ```
 
-### 3. Run the Web Application
+### 3. Start the Backend (required)
+
+```bash
+cd backend
+python -m app.main
+# Expected log: {"port": 54388}\nBackend listening on port 54388
+```
+
+### 4. Run the Web Application
 
 ```bash
 cd app
